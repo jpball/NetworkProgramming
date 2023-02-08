@@ -82,6 +82,9 @@ int main(int argc, char * argv[])
 
 				ClientDatagram incomingDG = *((ClientDatagram*)buffer);
 				char* message = (char*)buffer + sizeof(ClientDatagram);
+				incomingDG.payload_length = ntohl(incomingDG.payload_length);
+				incomingDG.sequence_number = ntohl(incomingDG.sequence_number);
+				
 				cout << "Recieved datagram: " << incomingDG.sequence_number << " seq num, " << incomingDG.payload_length << " payload long." << endl;
 				cout << "Message: " << message << endl;
 
