@@ -20,7 +20,7 @@
 
 using namespace std;
 
-void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag);
+void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay);
 void DisplayMenu(char* argv[]);
 const ClientDatagram BuildDatagram(char* buffer, uint32_t seqNum, char* message);
 inline char* GetDatagramMessage(char* datagramBuffer);
@@ -39,6 +39,7 @@ int main(int argc, char * argv[])
 	int retval = 0;
 	int udpSocketNumber;
 	bool isDebugMode = false;
+	uint32_t microsecDelay = 0;
 
 	int serverPort = PORT_NUMBER;
 	string serverAddress = SERVER_IP;
@@ -52,7 +53,7 @@ int main(int argc, char * argv[])
 	char buffer[BUFFER_SIZE];
 	try
 	{
-		GetOptions(argc, argv, serverPort, serverAddress, isDebugMode);
+		GetOptions(argc, argv, serverPort, serverAddress, isDebugMode, microsecDelay);
 		if(isDebugMode) numDatagrams = 5;
 
 		// Create our outgoing data socket
@@ -119,6 +120,8 @@ int main(int argc, char * argv[])
 			/*
 				SEND THE DATAGRAM
 			*/
+			if(microsecDelay > 0) usleep(microsecDelay); // Delay before the next outgoing datagram if we want to
+
 			if(isDebugMode) cout << "Attempting to send payload..." << endl;
 			ssize_t bytesSent = sendto(udpSocketNumber, (void*)buffer, fullDatagramSize, 0, (struct sockaddr*) &serverSockAddr, sizeof(serverSockAddr));
 			// Check if there was an error with sending
@@ -190,10 +193,10 @@ inline char* GetDatagramMessage(char* datagramBuffer)
 }
 
 
-void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag)
+void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay)
 {
 	int c;
-	while ((c = getopt(argc, argv, "hs:p:d")) != -1)
+	while ((c = getopt(argc, argv, "hs:p:dy:")) != -1)
 	{
 		switch (c)
 		{
@@ -202,6 +205,12 @@ void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, 
 				// -h prints help information and exits.
 				DisplayMenu(argv);
 				throw HELP_MENU_RV;
+			}
+			case('y'):
+			{
+				// -y introduces a delay between sending datagrams
+				msDelay = atoi(optarg);
+				break;
 			}
 			case ('s'):
 			{
