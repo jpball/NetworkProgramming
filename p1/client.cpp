@@ -20,7 +20,7 @@
 
 using namespace std;
 
-void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay);
+void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay, uint32_t& numDG);
 void DisplayMenu(char* argv[]);
 const ClientDatagram BuildDatagram(char* buffer, uint32_t seqNum, char* message);
 inline char* GetDatagramMessage(char* datagramBuffer);
@@ -43,7 +43,7 @@ int main(int argc, char * argv[])
 
 	int serverPort = PORT_NUMBER;
 	string serverAddress = SERVER_IP;
-	ssize_t numDatagrams = NUMBER_OF_DATAGRAMS;
+	uint32_t numDatagrams = NUMBER_OF_DATAGRAMS;
 
 	struct sockaddr_in serverSockAddr;
 	struct hostent* serverHostEnt;
@@ -53,8 +53,7 @@ int main(int argc, char * argv[])
 	char buffer[BUFFER_SIZE];
 	try
 	{
-		GetOptions(argc, argv, serverPort, serverAddress, isDebugMode, microsecDelay);
-		if(isDebugMode) numDatagrams = 5;
+		GetOptions(argc, argv, serverPort, serverAddress, isDebugMode, microsecDelay, numDatagrams);
 
 		// Create our outgoing data socket
 		if(isDebugMode) cout << "Opening socket..." << endl;
@@ -193,10 +192,10 @@ inline char* GetDatagramMessage(char* datagramBuffer)
 }
 
 
-void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay)
+void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay, uint32_t& numDG)
 {
 	int c;
-	while ((c = getopt(argc, argv, "hs:p:dy:")) != -1)
+	while ((c = getopt(argc, argv, "hs:p:dy:n:")) != -1)
 	{
 		switch (c)
 		{
@@ -210,6 +209,11 @@ void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, 
 			{
 				// -y introduces a delay between sending datagrams
 				msDelay = atoi(optarg);
+				break;
+			}
+			case('n'):
+			{
+				numDG = atoi(optarg);
 				break;
 			}
 			case ('s'):
