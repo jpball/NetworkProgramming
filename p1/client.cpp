@@ -92,34 +92,35 @@ int main(int argc, char * argv[])
 			*/
 			if(isDebugMode) cout << "Creating datagram..." << endl;
 			char message[] = "HelloWorld";
+			size_t messageSize = strlen(message) + 1;
 
 			ClientDatagram* outgoingDG = (ClientDatagram*)buffer;
+			ssize_t fullDatagramSize = sizeof(ClientDatagram) + messageSize;
+
 
 			// Set payload length
-			outgoingDG->payload_length = strlen(message);
+			outgoingDG->payload_length = messageSize + sizeof(ClientDatagram);
 			outgoingDG->sequence_number = dgNum;
 			strcpy(buffer + sizeof(ClientDatagram), message);
 
-
-			// char* offset = buffer + sizeof(ClientDatagram);
-			// strcat(offset, message); // Concatenate our message after the datagram
-			ssize_t fullDatagramSize = sizeof(outgoingDG) + outgoingDG->payload_length;
-
-
 			if(isDebugMode)
 			{
-				cout << "Datagram created!" << endl;
-				cout << "     with seq num:        " << outgoingDG->sequence_number 		<< "{" << sizeof(outgoingDG->sequence_number) << " bytes}" << endl;
-				cout << "     with payload length: " << outgoingDG->payload_length 		<< "{" << sizeof(outgoingDG->payload_length)  << " bytes}" << endl;
-				cout << "     with message:        " << GetDatagramMessage(buffer) 	        << " {" << strlen(message) << " bytes} " << endl;
-				cout << "     with full size of    " << fullDatagramSize << " bytes" 	        << endl;
+				cout << "Datagram created!";
+				cout << " sn: " 	<< outgoingDG->sequence_number  << " {" 	<< sizeof(outgoingDG->sequence_number)	<< " bytes}";
+				cout << " pl: " 	<< outgoingDG->payload_length	<< " {" 	<< sizeof(outgoingDG->payload_length) 	<< " bytes}";
+				cout << " m:  " 	<< message					 	<< " {" 	<< messageSize							<< " bytes}";
+				cout << " sz: " 	<< fullDatagramSize 			<< " bytes" << endl;
 			}
+
+			// Prepare ByteOrdering of Datagram for network
+			outgoingDG->payload_length = htons(outgoingDG->payload_length);
+			outgoingDG->sequence_number = htonl(outgoingDG->sequence_number);
 
 			/*
 				SEND THE DATAGRAM
 			*/
 			if(isDebugMode) cout << "Attempting to send payload..." << endl;
-			ssize_t bytesSent = sendto(udpSocketNumber, (void*)buffer, outgoingDG->payload_length + sizeof(outgoingDG), 0, (struct sockaddr*) &serverSockAddr, sizeof(serverSockAddr));
+			ssize_t bytesSent = sendto(udpSocketNumber, (void*)buffer, fullDatagramSize, 0, (struct sockaddr*) &serverSockAddr, sizeof(serverSockAddr));
 			// Check if there was an error with sending
 			if(bytesSent != fullDatagramSize)
 			{

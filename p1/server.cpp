@@ -56,7 +56,7 @@ int main(int argc, char * argv[])
 		}
 
 		// Configure our connection details
-		memset(&serverSockAddr, 0, sizeof(serverSockAddr));
+		memset(&serverSockAddr, 0, sizeof(sockaddr_in));
 		serverSockAddr.sin_family = AF_INET;
 		serverSockAddr.sin_addr.s_addr = INADDR_ANY;
 		serverSockAddr.sin_port = htons(serverPort);
@@ -80,17 +80,15 @@ int main(int argc, char * argv[])
 				cout << bytesReceived << " bytes received from: ";
 				cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
 
-				ClientDatagram incomingDG = *((ClientDatagram*)buffer);
+				ClientDatagram* incomingDG = (ClientDatagram*)buffer;
 				char* message = (char*)buffer + sizeof(ClientDatagram);
-				incomingDG.payload_length = ntohl(incomingDG.payload_length);
-				incomingDG.sequence_number = ntohl(incomingDG.sequence_number);
-				
-				cout << "Recieved datagram: " << incomingDG.sequence_number << " seq num, " << incomingDG.payload_length << " payload long." << endl;
-				cout << "Message: " << message << endl;
+				incomingDG->payload_length = ntohs(incomingDG->payload_length);
+				incomingDG->sequence_number = ntohl(incomingDG->sequence_number);
 
+				cout << "Recieved datagram | sn: " << incomingDG->sequence_number << " pl: " << incomingDG->payload_length << " || M: " << message << endl;
 
 				ServerDatagram outgoingDG;
-				outgoingDG.sequence_number = incomingDG.sequence_number;
+				outgoingDG.sequence_number = incomingDG->sequence_number;
 				outgoingDG.datagram_length = bytesReceived;
 
 				ssize_t bytesSent = sendto(udpSocketNumber, (void*)&outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
