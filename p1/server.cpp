@@ -20,6 +20,8 @@ using namespace std;
 
 void GetOptions(int argc, char* argv[], int& portNumber);
 void DisplayMenu(char* argv[]);
+void PrintClientDatagramInfo(void* buffer);
+void PrintServerDatagramInfo(ServerDatagram* buffer);
 
 #define HELP_MENU_RV 10;
 #define SOCKET_ERROR_RV 11;
@@ -38,8 +40,8 @@ int main(int argc, char * argv[])
 	unsigned char buffer[BUFFER_SIZE];
 	ssize_t bytesReceived;
 	socklen_t l = sizeof(clientSockAddr);
-
 	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
+
 
 	try
 	{
@@ -68,6 +70,7 @@ int main(int argc, char * argv[])
 			perror("ERROR on binding");
 			throw BIND_ERROR_RV;
 		}
+
 		cout << "Network structs initialized and port is bound." << endl;
 
 		while (true)
@@ -81,22 +84,27 @@ int main(int argc, char * argv[])
 				cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
 
 				ClientDatagram* incomingDG = (ClientDatagram*)buffer;
-				char* message = (char*)buffer + sizeof(ClientDatagram);
+
 				incomingDG->payload_length = ntohs(incomingDG->payload_length);
 				incomingDG->sequence_number = ntohl(incomingDG->sequence_number);
 
-				cout << "Recieved datagram | sn: " << incomingDG->sequence_number << " pl: " << incomingDG->payload_length << " || M: " << message << endl;
+				cout << "Recieved datagram!" << endl;
+				PrintClientDatagramInfo(&buffer);
 
 				ServerDatagram outgoingDG;
 				outgoingDG.sequence_number = incomingDG->sequence_number;
 				outgoingDG.datagram_length = bytesReceived;
 
-				ssize_t bytesSent = sendto(udpSocketNumber, (void*)&outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
+				ssize_t bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
 				if(bytesSent != sizeof(ServerDatagram))
 				{
-					cerr << "Sent: " << bytesSent << " expected to send: " << sizeof(ServerDatagram) << endl;
+					cerr << "ERROR: Sent " << bytesSent << " bytes, expected to send: " << sizeof(ServerDatagram) << endl;
 					perror("sendto()");
 					throw INVALID_BYTES_SENT_RV;
+				}
+				else
+				{
+					cerr << "Sent!" << endl;
 				}
 			}
 			else if (bytesReceived == 0)
@@ -129,10 +137,13 @@ void GetOptions(int argc, char* argv[], int& portNumber)
 				DisplayMenu(argv);
 				throw HELP_MENU_RV;
 			}
-
 			case ('p'):
 			{
 				portNumber = atoi(optarg);
+				break;
+			}
+			case ('d'):
+			{
 				break;
 			}
 		}
@@ -141,7 +152,20 @@ void GetOptions(int argc, char* argv[], int& portNumber)
 //--
 void DisplayMenu(char* argv[])
 {
-	cerr << argv[0] << "options:" << endl;
-	cerr << "   -h displays help" << endl;
-	cerr << "   -p port_number" << endl;
+	cout << argv[0] << " options:" << endl;
+	cout << "   -h displays help" << endl;
+	cout << "   -p port_number ..... defaults to " << PORT_NUMBER << endl;
+}
+//--
+void PrintClientDatagramInfo(void* buffer)
+{
+	ClientDatagram* cd = (ClientDatagram*)buffer;
+	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)(cd + sizeof(ClientDatagram)) << endl;
+}
+//--
+void PrintServerDatagramInfo(ServerDatagram* buffer)
+{
+	ServerDatagram* sd = (ServerDatagram*)buffer;
+	cout << "ClientDatagram-- seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
+
 }

@@ -22,6 +22,8 @@ using namespace std;
 
 void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay, uint32_t& numDG);
 void DisplayMenu(char* argv[]);
+void PrintClientDatagramInfo(void* buffer);
+void PrintServerDatagramInfo(ServerDatagram* buffer);
 
 #define INVALID_OPTION 9
 #define HELP_MENU_RV 10
@@ -51,13 +53,20 @@ int main(int argc, char * argv[])
 	const size_t MESSAGE_SIZE = strlen(MESSAGE) + 1; // +1 for the null terminator
 	const ssize_t EXP_OUTGOING_DATAGRAM_SIZE = sizeof(ClientDatagram) + MESSAGE_SIZE; // Expected  size of the outgoing datagram's metadata and message
 	const ssize_t EXP_INCOMING_DATAGRAM_SIZE = sizeof(ServerDatagram); // Expected size of the incoming datagram from the server
-	char* outgoingBuffer = nullptr;
-	char* incomingBuffer = nullptr;
+	char* outgoingBuffer = nullptr; // Used to build and hold the outgoing datagram and message
+	char* incomingBuffer = nullptr; // Used to hold the incoming datagram from the server
+
+	ssize_t numPacketsSent = 0;
+	set<uint32_t> seqNumbersSent; // Keep track of which packet numbers leave and come back
+	set<uint32_t>::iterator setIT;
+
 	try
 	{
 		GetOptions(argc, argv, serverPort, serverAddress, isDebugMode, microsecDelay, numDatagrams);
+		cout << "Datagram length: " << sizeof(ClientDatagram) << " size of string: " << MESSAGE_SIZE << " total size: " << EXP_OUTGOING_DATAGRAM_SIZE << endl;
 
 		#pragma region ConnectionSetup
+
 		// Create our outgoing data socket
 		if(isDebugMode) cout << "Opening socket..." << endl;
 		udpSocketNumber = socket(AF_INET, SOCK_DGRAM, 0);
@@ -67,10 +76,17 @@ int main(int argc, char * argv[])
 			throw SOCKET_ERROR_RV;
 		}
 
-		fcntl(udpSocketNumber, F_SETFL, O_NONBLOCK); // Set our socket to NonBlocking
+		// int retV = fcntl(udpSocketNumber, F_SETFL, O_NONBLOCK); // Set our socket to NonBlocking
+		// if(retV == -1)
+		// {
+		// 	perror("fcntl():");
+		// 	throw 99;
+		// }
 
 		// Get our server's connection info
 		if(isDebugMode) cout << "Obtaining server connection info..." << endl;
+		cout << "Client attempting to connect to ip: " << serverAddress << endl;
+
 		serverHostEnt = gethostbyname(serverAddress.c_str());
 		if(serverHostEnt == nullptr)
 		{
@@ -81,6 +97,8 @@ int main(int argc, char * argv[])
 
 		// Configure our connection settings
 		if(isDebugMode) cout << "Configuring connection settings..." << endl;
+		cout << "Client attempting to connect to port: " << serverPort << endl;
+
 		memset(&serverSockAddr, 0, sizeof(serverSockAddr));
 		serverSockAddr.sin_family = AF_INET;
 		memmove(&serverSockAddr.sin_addr.s_addr, serverHostEnt->h_addr, serverHostEnt->h_length);
@@ -88,15 +106,19 @@ int main(int argc, char * argv[])
 
 		#pragma endregion
 
+		// Allocate our buffers on the heap to be used later
+		// Doing this before out datagrams go out helps with efficiency
+		outgoingBuffer = (char*)malloc(EXP_OUTGOING_DATAGRAM_SIZE);
+		incomingBuffer = (char*)malloc(EXP_INCOMING_DATAGRAM_SIZE);
 
 		// We wanna send a certain number of datagrams out
 		for(size_t dgNum = 0; dgNum < numDatagrams; dgNum++)
 		{
+
+			#pragma region SENDING
 			/*
 				BUILDING THE DATAGRAM
 			*/
-			if(isDebugMode) cout << "Creating datagram..." << endl;
-			outgoingBuffer = (char*)malloc( EXP_OUTGOING_DATAGRAM_SIZE );
 
 			ClientDatagram* outgoingDG = (ClientDatagram*)outgoingBuffer;
 
@@ -122,9 +144,7 @@ int main(int argc, char * argv[])
 			/*
 				SENDING THE DATAGRAM
 			*/
-			if(microsecDelay > 0) usleep(microsecDelay); // Delay before the next outgoing datagram if we want to
 
-			if(isDebugMode) cout << "Attempting to send payload..." << endl;
 			ssize_t bytesSent = sendto(udpSocketNumber, outgoingBuffer, EXP_OUTGOING_DATAGRAM_SIZE, 0, (struct sockaddr*) &serverSockAddr, sizeof(serverSockAddr));
 			// Check if there was an error with sending
 			if(bytesSent != EXP_OUTGOING_DATAGRAM_SIZE)
@@ -133,10 +153,19 @@ int main(int argc, char * argv[])
 				perror("sendto()");
 				throw MESSAGE_SEND_ERROR_RV;
 			}
+			else
+			{
+				// Our packet was sucessfully sent
+				if(isDebugMode) cout << "Sending success!" << endl;
+				numPacketsSent++;
+				seqNumbersSent.insert(outgoingDG->sequence_number);
+			}
 
-			free(outgoingBuffer);
-			outgoingBuffer = nullptr;
-			outgoingDG = nullptr;
+			#pragma endregion
+
+			// Delay before the next outgoing datagram if we want to
+			//usleep(microsecDelay);
+
 
 			/*
 			=======================
@@ -144,18 +173,11 @@ int main(int argc, char * argv[])
 			=======================
 			*/
 
-			incomingBuffer = (char*) malloc( EXP_INCOMING_DATAGRAM_SIZE );
 			bytesReceived = recvfrom(udpSocketNumber, incomingBuffer, EXP_INCOMING_DATAGRAM_SIZE, 0, (struct sockaddr *) &serverSockAddr, &incomingSocketLength);
+			// 	These flags are set when there was nothing to read
+			if(errno == EAGAIN || errno == EWOULDBLOCK) continue; // We just wanna move on to the next datagram
 
-			if(errno == EAGAIN || errno == EWOULDBLOCK)
-			{
-				// These flags are set when there was nothing to read
-				free(incomingBuffer);
-				incomingBuffer = nullptr;
-				continue; // We just wanna move on to the next datagram
-			}
-
-
+			if(isDebugMode) cout << "++ Bytes rec: " << bytesReceived << endl;
 			if(bytesReceived > 0)
 			{
 				// We recieved something
@@ -163,9 +185,23 @@ int main(int argc, char * argv[])
 				incomingDG->datagram_length = ntohs(incomingDG->datagram_length); // network to host short
 				incomingDG->sequence_number = ntohl(incomingDG->sequence_number); // network to host long
 
+				if((setIT = seqNumbersSent.find(incomingDG->sequence_number)) != seqNumbersSent.end())
+				{
+					// The packet we recieved was one we sent out previously
+					seqNumbersSent.erase(setIT);
+				}
+				else
+				{
+					// Unknown packet recieved
+					cerr << "ERROR: Unknown sequence number recieved: " << incomingDG->sequence_number << endl;
+				}
+
 				// Print out info alerting us to a datagram reception
-				cout << "Recieved datagram from server: ";
-				cout << "     seq: " << incomingDG->sequence_number << " len: " << incomingDG->datagram_length << endl;
+				if(isDebugMode)
+				{
+					cout << "Recieved datagram from server: ";
+					PrintServerDatagramInfo(incomingDG);
+				}
 			}
 			else
 			{
@@ -173,16 +209,19 @@ int main(int argc, char * argv[])
 				perror("recvfrom()");
 				throw MESSAGE_RECV_ERROR_RV;
 			}
-
-			free(incomingBuffer);
-			incomingBuffer = nullptr;
 		}
+
+
+
 
 	}
 	catch (int rv)
 	{
 		retval = rv;
 	}
+
+	cout << numPacketsSent << " messages sent!" << endl;
+	cout << "Unacknowledged packets: " << seqNumbersSent.size() << endl;
 
 	if(udpSocketNumber >= 0)
 	{
@@ -259,11 +298,24 @@ void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, 
 //--
 void DisplayMenu( char* argv[])
 {
-	cerr << argv[0] << " options:" << endl;
-	cerr << "	-h displays help" << endl;
-	cerr << "	-s server_address (required)" << endl;
-	cerr << "	-p port_number    (required)" << endl;
-	cerr << "   -m message        (required)" << endl;
-	cerr << "   -n datagram_count" << endl;
-	cerr << "   -y delay_in_ms" << endl;
+	cout << argv[0] << " options:" << endl;
+	cout << "  -h displays help" 	<< endl;
+	cout << "  -d enables debug mode" << endl;
+	cout << setfill('.') << setiosflags(ios_base::left) << setw(45) << "  -s server_address " 				<< "defaults to "  	<< SERVER_IP 			<< endl;
+	cout << setfill('.') << setiosflags(ios_base::left) << setw(45) << "  -p port_number " 					<< "defaults to " 	<< PORT_NUMBER 			<< endl;
+	cout << setfill('.') << setiosflags(ios_base::left) << setw(45) << "  -y overrides delay (in microseconds) "	<< "defaults to "	<< 0 					<< endl;
+	cout << setfill('.') << setiosflags(ios_base::left) << setw(45) << "  -n overrides number of datagrams " 	<< "defaults to " 	<< NUMBER_OF_DATAGRAMS 	<< endl;
+}
+//--
+void PrintClientDatagramInfo(void* buffer)
+{
+	ClientDatagram* cd = (ClientDatagram*)buffer;
+	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)(cd + sizeof(ClientDatagram)) << endl;
+}
+//--
+void PrintServerDatagramInfo(ServerDatagram* buffer)
+{
+	ServerDatagram* sd = (ServerDatagram*)buffer;
+	cout << "ClientDatagram-- seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
+
 }
