@@ -76,12 +76,7 @@ int main(int argc, char * argv[])
 			throw SOCKET_ERROR_RV;
 		}
 
-		// int retV = fcntl(udpSocketNumber, F_SETFL, O_NONBLOCK); // Set our socket to NonBlocking
-		// if(retV == -1)
-		// {
-		// 	perror("fcntl():");
-		// 	throw 99;
-		// }
+
 
 		// Get our server's connection info
 		if(isDebugMode) cout << "Obtaining server connection info..." << endl;
@@ -104,6 +99,13 @@ int main(int argc, char * argv[])
 		memmove(&serverSockAddr.sin_addr.s_addr, serverHostEnt->h_addr, serverHostEnt->h_length);
 		serverSockAddr.sin_port = htons(serverPort);
 
+		int retV = fcntl(udpSocketNumber, F_SETFL, O_NONBLOCK); // Set our socket to NonBlocking
+		if(retV == -1)
+		{
+			perror("fcntl():");
+			throw 99;
+		}
+
 		#pragma endregion
 
 		// Allocate our buffers on the heap to be used later
@@ -111,35 +113,26 @@ int main(int argc, char * argv[])
 		outgoingBuffer = (char*)malloc(EXP_OUTGOING_DATAGRAM_SIZE);
 		incomingBuffer = (char*)malloc(EXP_INCOMING_DATAGRAM_SIZE);
 
+		/*
+			BUILDING THE DATAGRAM
+		*/
+		ClientDatagram* outgoingDG = (ClientDatagram*)outgoingBuffer;
+
+		// Set payload length
+		outgoingDG->payload_length = htons(MESSAGE_SIZE);
+		outgoingDG->sequence_number = 0;
+
+		// Copy our message after the datagram
+		strcpy(outgoingBuffer + sizeof(ClientDatagram), MESSAGE); // Copy the message after the datagram metadata
+
+
+
+
 		// We wanna send a certain number of datagrams out
 		for(size_t dgNum = 0; dgNum < numDatagrams; dgNum++)
 		{
 
-			#pragma region SENDING
-			/*
-				BUILDING THE DATAGRAM
-			*/
-
-			ClientDatagram* outgoingDG = (ClientDatagram*)outgoingBuffer;
-
-			// Set payload length
-			outgoingDG->payload_length = MESSAGE_SIZE;
-			outgoingDG->sequence_number = dgNum;
-
-			strcpy(outgoingBuffer + sizeof(ClientDatagram), MESSAGE); // Copy the message after the datagram metadata
-
-			if(isDebugMode)
-			{
-				cout << "Datagram created!";
-				cout << " sn: " 	<< outgoingDG->sequence_number  << " {" 	<< sizeof(outgoingDG->sequence_number)	<< " bytes}";
-				cout << " pl: " 	<< outgoingDG->payload_length	<< " {" 	<< sizeof(outgoingDG->payload_length) 	<< " bytes}";
-				cout << " m:  " 	<< MESSAGE					 	<< " {" 	<< MESSAGE_SIZE							<< " bytes}";
-				cout << " sz: " 	<< EXP_OUTGOING_DATAGRAM_SIZE 	<< " bytes" << endl;
-			}
-
-			// Prepare ByteOrdering of Datagram for network
-			outgoingDG->payload_length = htons(outgoingDG->payload_length);
-			outgoingDG->sequence_number = htonl(outgoingDG->sequence_number);
+			outgoingDG->sequence_number = htonl(dgNum);
 
 			/*
 				SENDING THE DATAGRAM
@@ -161,7 +154,6 @@ int main(int argc, char * argv[])
 				seqNumbersSent.insert(outgoingDG->sequence_number);
 			}
 
-			#pragma endregion
 
 			// Delay before the next outgoing datagram if we want to
 			//usleep(microsecDelay);
@@ -175,12 +167,16 @@ int main(int argc, char * argv[])
 
 			bytesReceived = recvfrom(udpSocketNumber, incomingBuffer, EXP_INCOMING_DATAGRAM_SIZE, 0, (struct sockaddr *) &serverSockAddr, &incomingSocketLength);
 			// 	These flags are set when there was nothing to read
-			if(errno == EAGAIN || errno == EWOULDBLOCK) continue; // We just wanna move on to the next datagram
+			if(errno == EAGAIN || errno == EWOULDBLOCK)
+			{
+				if(isDebugMode) cout << "Nothing recieved..not blocking" << endl;
+				continue; // We just wanna move on to the next datagram
+			}
 
 			if(isDebugMode) cout << "++ Bytes rec: " << bytesReceived << endl;
 			if(bytesReceived > 0)
 			{
-				// We recieved something
+				// We recieved some data, so lets try and build our datagram with it
 				ServerDatagram* incomingDG = (ServerDatagram*)(incomingBuffer);
 				incomingDG->datagram_length = ntohs(incomingDG->datagram_length); // network to host short
 				incomingDG->sequence_number = ntohl(incomingDG->sequence_number); // network to host long
@@ -210,9 +206,6 @@ int main(int argc, char * argv[])
 				throw MESSAGE_RECV_ERROR_RV;
 			}
 		}
-
-
-
 
 	}
 	catch (int rv)
