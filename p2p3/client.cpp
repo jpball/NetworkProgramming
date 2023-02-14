@@ -1,15 +1,29 @@
 #include <iostream>
 #include <getopt.h>
 #include <string>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 using namespace std;
 
+#define DEFAULT_PORT 9838
+#define DEFAULT_ADDRESS "127.0.0.1"
+
 void GetOpt(int argc, char* argv[]);
 void DisplayHelpMenu();
+void SendMessageToServer(const string message);
 
 int main(int argc, char* argv[])
 {
-    cout << "Hello world!" << endl;
+    //int socketFD;
+
 
     try
     {
@@ -18,10 +32,44 @@ int main(int argc, char* argv[])
         string fullOutgoingMessage;
         string userInput;
 
+
+        while(true)
+        {
+            cout << "> "; // Print out prompt indicator
+            getline(cin, userInput); // Get user input up until newline
+
+            if(userInput.find("QUIT") != string::npos)
+            {
+                // We found 'QUIT' in the newly entered string
+                // So let's quit out of the loop
+                cout << "Quitting..." << endl;
+                break;
+            }
+
+            size_t overIndex = userInput.find("OVER");
+            if(overIndex != string::npos)
+            {
+                // Our inputting message contains the word OVER
+                // And we only want up to that word
+                // Note, we want to send the word "OVER" too, so add 4 to the offset
+                fullOutgoingMessage.append(userInput.substr(0, overIndex + 4));
+
+                // Send it to our server
+                SendMessageToServer(fullOutgoingMessage);
+            }
+
+            // Add this newly entered string to our overarching message
+            fullOutgoingMessage.append(userInput);
+
+        }
         do
         {
-            getline(cin, userInput);
+
+
+
             fullOutgoingMessage.append(userInput);
+
+
         }while(userInput.find("QUIT") == string::npos);
 
         cout << "FULL MESSAGE:" << endl;
@@ -31,6 +79,8 @@ int main(int argc, char* argv[])
     catch(int value)
     {
     }
+
+    cout << "Client exiting normally..." << endl;
     return 0;
 }
 
@@ -73,8 +123,13 @@ Prints help menu, featuring command line options and their descriptions
 */
 void DisplayHelpMenu()
 {
-    cout << ":: Options ::" << endl;
-    cout << "    -h prints this menu" << endl;
-    cout << "    -p overrides port number" << endl;
-    cout << "    -d overrides destination address" << endl;
+    cout << "Usage:" << endl;
+    cout << "-h       prints this text" << endl;
+    cout << "-d ip    overrides the default address of " << DEFAULT_ADDRESS << endl;
+    cout << "-p port  overrides the default port of " << DEFAULT_PORT << endl;
+}
+//--
+void SendMessageToServer(const string message)
+{
+    cout << "Server probably recieved: |" << message << "|" << endl;
 }
