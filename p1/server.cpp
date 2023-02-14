@@ -18,15 +18,15 @@
 
 using namespace std;
 
-void GetOptions(int argc, char* argv[], int& portNumber);
+void GetOptions(int argc, char* argv[], int& portNumber, bool& debugFlag);
 void DisplayMenu(char* argv[]);
-void PrintClientDatagramInfo(void* buffer);
-void PrintServerDatagramInfo(ServerDatagram* buffer);
+inline void PrintClientDatagramInfo(void* buffer);
+inline void PrintServerDatagramInfo(ServerDatagram* buffer);
 
 #define HELP_MENU_RV 10;
 #define SOCKET_ERROR_RV 11;
 #define BIND_ERROR_RV 12;
-#define INVALID_BYTES_SENT_RV 20;
+#define UNKNOWN_OPTION_RV 21;
 
 int main(int argc, char * argv[])
 {
@@ -34,6 +34,7 @@ int main(int argc, char * argv[])
 	const size_t BUFFER_SIZE = 1024;
 	int udpSocketNumber;
 	int serverPort = PORT_NUMBER;
+	bool isDebugMode = false;
 
 	struct sockaddr_in serverSockAddr;
 	struct sockaddr_in clientSockAddr;
@@ -42,10 +43,9 @@ int main(int argc, char * argv[])
 	socklen_t l = sizeof(clientSockAddr);
 	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
 
-
 	try
 	{
-		GetOptions(argc, argv, serverPort);
+		GetOptions(argc, argv, serverPort, isDebugMode);
 
 		cout << "Server will attempt to bind to port: " << serverPort << endl;
 
@@ -59,61 +59,74 @@ int main(int argc, char * argv[])
 
 		// Configure our connection details
 		memset(&serverSockAddr, 0, sizeof(sockaddr_in));
-		serverSockAddr.sin_family = AF_INET;
-		serverSockAddr.sin_addr.s_addr = INADDR_ANY;
-		serverSockAddr.sin_port = htons(serverPort);
+		serverSockAddr.sin_family = AF_INET; // Address family (ipv4 or ipv6, AF_INET allows both)
+		serverSockAddr.sin_addr.s_addr = INADDR_ANY; // Any ip address
+		serverSockAddr.sin_port = htons(serverPort); // The port we want to use
 
 		// Bind our socket to our connection details
 		if (bind(udpSocketNumber, (const struct sockaddr *) &serverSockAddr, socklen_t(sizeof(serverSockAddr))) < 0)
 		{
-			close(udpSocketNumber);
 			perror("ERROR on binding");
 			throw BIND_ERROR_RV;
 		}
 
 		cout << "Network structs initialized and port is bound." << endl;
 
+		// Since it's a server, we never want to really end
 		while (true)
 		{
-			memset(buffer, 0, BUFFER_SIZE);
+			memset(buffer, 0, BUFFER_SIZE); // Wipe out any garbage/leftover values from our buffer
+
 			bytesReceived = recvfrom(udpSocketNumber, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &clientSockAddr, &l);
 
 			if (bytesReceived > 0)
 			{
-				cout << bytesReceived << " bytes received from: ";
-				cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
+				if(isDebugMode)
+				{
+					cout << bytesReceived << " bytes received from: ";
+					cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
+				}
 
+				// Build a client datagram using the buffer
 				ClientDatagram* incomingDG = (ClientDatagram*)buffer;
 
+				// Interpret the values from network byte ordering
 				incomingDG->payload_length = ntohs(incomingDG->payload_length);
 				incomingDG->sequence_number = ntohl(incomingDG->sequence_number);
 
-				cout << "Recieved datagram!" << endl;
-				PrintClientDatagramInfo(&buffer);
+				if(isDebugMode)
+				{
+					cout << "Recieved datagram!" << endl;
+					PrintClientDatagramInfo(&buffer);
+				}
 
+				// Now that we got our incoming data, let's use it and send back a response datagram
+				// Ensure we convert to network byte ordering
 				ServerDatagram outgoingDG;
-				outgoingDG.sequence_number = incomingDG->sequence_number;
-				outgoingDG.datagram_length = bytesReceived;
+				outgoingDG.sequence_number = htonl(incomingDG->sequence_number);
+				outgoingDG.datagram_length = htons(bytesReceived);
 
 				ssize_t bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
 				if(bytesSent != sizeof(ServerDatagram))
 				{
+					// We sent less than we wanted
 					cerr << "ERROR: Sent " << bytesSent << " bytes, expected to send: " << sizeof(ServerDatagram) << endl;
 					perror("sendto()");
-					throw INVALID_BYTES_SENT_RV;
 				}
-				else
+				else if(isDebugMode)
 				{
-					cerr << "Sent!" << endl;
+					// We sent the proper amount of bytes
+					cerr << "Sent " << bytesSent << " bytes!" << endl;
 				}
 			}
 			else if (bytesReceived == 0)
 			{
 				cout << "Received zero bytes - I don't think this can happen.\n";
 			}
-			else {
+			else
+			{
+				// Recv failed...we don't want to end just yet
 				perror("recvfrom()");
-				throw 1;
 			}
 		}
 	}
@@ -121,14 +134,21 @@ int main(int argc, char * argv[])
 	{
 		retval = rv;
 	}
+
+	// Close our socket
+	if(udpSocketNumber >= 0)
+	{
+		close(udpSocketNumber);
+	}
+
 	return retval;
 }
 
 
-void GetOptions(int argc, char* argv[], int& portNumber)
+void GetOptions(int argc, char* argv[], int& portNumber, bool& debugFlag)
 {
 	int c;
-	while ((c = getopt(argc, argv, "hp:vd")) != -1)
+	while ((c = getopt(argc, argv, "hp:d")) != -1)
 	{
 		switch (c) {
 
@@ -144,7 +164,13 @@ void GetOptions(int argc, char* argv[], int& portNumber)
 			}
 			case ('d'):
 			{
+				debugFlag = true;
 				break;
+			}
+			default:
+			{
+				cerr << "Unknown option supplied: " << (char)c << endl;
+				throw UNKNOWN_OPTION_RV;
 			}
 		}
 	}
@@ -155,17 +181,17 @@ void DisplayMenu(char* argv[])
 	cout << argv[0] << " options:" << endl;
 	cout << "   -h displays help" << endl;
 	cout << "   -p port_number ..... defaults to " << PORT_NUMBER << endl;
+	cout << "   -d enables debug mode" << endl;
 }
 //--
-void PrintClientDatagramInfo(void* buffer)
+inline void PrintClientDatagramInfo(void* buffer)
 {
 	ClientDatagram* cd = (ClientDatagram*)buffer;
-	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)(cd + sizeof(ClientDatagram)) << endl;
+	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)cd + sizeof(ClientDatagram) << endl;
 }
 //--
-void PrintServerDatagramInfo(ServerDatagram* buffer)
+inline void PrintServerDatagramInfo(ServerDatagram* buffer)
 {
 	ServerDatagram* sd = (ServerDatagram*)buffer;
 	cout << "ClientDatagram-- seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
-
 }
