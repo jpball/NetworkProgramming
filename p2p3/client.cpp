@@ -102,6 +102,11 @@ int main(int argc, char* argv[])
     {
     }
 
+    if(socketFD > 0)
+    {
+        close(socketFD);
+    }
+
     cout << "Client exiting normally..." << endl;
     return 0;
 }
