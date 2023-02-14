@@ -16,19 +16,39 @@ using namespace std;
 #define DEFAULT_PORT 9838
 #define DEFAULT_ADDRESS "127.0.0.1"
 
+#define SOCKET_FAIL 10;
+
 void GetOpt(int argc, char* argv[]);
 void DisplayHelpMenu();
 void SendMessageToServer(const string message);
 
 int main(int argc, char* argv[])
 {
-    //int socketFD;
+    int retVal = 0;
+    int socketFD; // The socket number we will be using
+    string serverAddress = DEFAULT_ADDRESS; // The IP address of the server we are connecting to
+    int serverPort = DEFAULT_PORT; // The server port we are connecting to
 
 
     try
     {
         // Establish TCP connection
+        #pragma region SetupConnection
+
+        socketFD = socket(PF_INET, SOCK_STREAM, 0);
+        if(socketFD < 0)
+        {
+            perror("ERROR | socket():");
+            throw SOCKET_FAIL;
+        }
+
+
+        #pragma endregion
+
+        #pragma region UserInput
+        /*
         // Loop to gather message (OVER will end this loop)
+
         string fullOutgoingMessage;
         string userInput;
 
@@ -75,6 +95,8 @@ int main(int argc, char* argv[])
         cout << "FULL MESSAGE:" << endl;
         cout << fullOutgoingMessage << endl;
 
+        */
+        #pragma endregion
     }
     catch(int value)
     {
