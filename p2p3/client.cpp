@@ -28,25 +28,19 @@ int main(int argc, char* argv[])
     int socketFD; // The socket number we will be using
     string serverAddress = DEFAULT_ADDRESS; // The IP address of the server we are connecting to
     int serverPort = DEFAULT_PORT; // The server port we are connecting to
-    hostent* serverHostEnt;
+
 
     try
     {
         // Establish TCP connection
         #pragma region SetupConnection
 
-
-        // Attempt to open our socket using TCP
         socketFD = socket(PF_INET, SOCK_STREAM, 0);
         if(socketFD < 0)
         {
-            perror("ERROR opening socket:");
+            perror("ERROR | socket():");
             throw SOCKET_FAIL;
         }
-
-
-
-
 
 
         #pragma endregion
