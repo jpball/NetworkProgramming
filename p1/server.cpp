@@ -31,33 +31,23 @@ inline void PrintServerDatagramInfo(ServerDatagram* buffer);
 int main(int argc, char * argv[])
 {
 	int retval = 0;
+	const size_t BUFFER_SIZE = 1024;
 	int udpSocketNumber;
 	int serverPort = PORT_NUMBER;
 	bool isDebugMode = false;
 
-	sockaddr_in serverSockAddr;
-	sockaddr_in clientSockAddr;
-	socklen_t socketAddrSize = sizeof(clientSockAddr);
-	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
-
-	// Build a client datagram using the buffer
-	// Since we don't know the exact size, let's just have a buffer size
-	const size_t BUFFER_SIZE = 1024;
+	struct sockaddr_in serverSockAddr;
+	struct sockaddr_in clientSockAddr;
+	unsigned char buffer[BUFFER_SIZE];
 	ssize_t bytesReceived;
-	char* incomingBuffer = (char*)malloc(BUFFER_SIZE);
-	ClientDatagram* incomingDG = (ClientDatagram*)incomingBuffer;
-
-	// Let's create a blank Datagrams to make out outgoing construction faster
-	ssize_t bytesSent = 0;
-	ServerDatagram* outgoingDG = new ServerDatagram;
+	socklen_t l = sizeof(clientSockAddr);
+	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
 
 	try
 	{
 		GetOptions(argc, argv, serverPort, isDebugMode);
 
 		cout << "Server will attempt to bind to port: " << serverPort << endl;
-
-		#pragma region CONNECTION_SETUP
 
 		// Create our incoming socket
 		udpSocketNumber = socket(AF_INET, SOCK_DGRAM, 0);
@@ -79,37 +69,44 @@ int main(int argc, char * argv[])
 			perror("ERROR on binding");
 			throw BIND_ERROR_RV;
 		}
-		#pragma endregion
 
 		cout << "Network structs initialized and port is bound." << endl;
 
 		// Since it's a server, we never want to really end
 		while (true)
 		{
-			memset(incomingBuffer, 0, BUFFER_SIZE); // Wipe out any garbage/leftover values from our buffer
-			bytesReceived = recvfrom(udpSocketNumber, incomingBuffer, BUFFER_SIZE, 0, (struct sockaddr *) &clientSockAddr, &socketAddrSize);
+			memset(buffer, 0, BUFFER_SIZE); // Wipe out any garbage/leftover values from our buffer
+
+			bytesReceived = recvfrom(udpSocketNumber, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &clientSockAddr, &l);
 
 			if (bytesReceived > 0)
 			{
-				// Convert our data to the host byte order
+				if(isDebugMode)
+				{
+					cout << bytesReceived << " bytes received from: ";
+					cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
+				}
+
+				// Build a client datagram using the buffer
+				ClientDatagram* incomingDG = (ClientDatagram*)buffer;
+
+				// Interpret the values from network byte ordering
 				incomingDG->payload_length = ntohs(incomingDG->payload_length);
 				incomingDG->sequence_number = ntohl(incomingDG->sequence_number);
 
 				if(isDebugMode)
 				{
-					cout << bytesReceived << " bytes received from: ";
-					cout << inet_ntoa(clientSockAddr.sin_addr) << endl;
-					cout << "Recieved Datagram: ";
-					PrintClientDatagramInfo(incomingBuffer);
+					cout << "Recieved datagram!" << endl;
+					PrintClientDatagramInfo(&buffer);
 				}
 
 				// Now that we got our incoming data, let's use it and send back a response datagram
-				// Using the received data, use it to found our outgoing Datagram
-				outgoingDG->datagram_length = htons(bytesReceived);
-				outgoingDG->sequence_number = htonl(incomingDG->sequence_number);
+				// Ensure we convert to network byte ordering
+				ServerDatagram outgoingDG;
+				outgoingDG.sequence_number = htonl(incomingDG->sequence_number);
+				outgoingDG.datagram_length = htons(bytesReceived);
 
-				bytesSent = sendto(udpSocketNumber, outgoingDG, sizeof(ServerDatagram), 0, (sockaddr*)&clientSockAddr, socketAddrSize);
-
+				ssize_t bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
 				if(bytesSent != sizeof(ServerDatagram))
 				{
 					// We sent less than we wanted
@@ -122,13 +119,14 @@ int main(int argc, char * argv[])
 					cerr << "Sent " << bytesSent << " bytes!" << endl;
 				}
 			}
+			else if (bytesReceived == 0)
+			{
+				cout << "Received zero bytes - I don't think this can happen.\n";
+			}
 			else
 			{
-				if(bytesReceived == 0) cout << "Received zero bytes - I don't think this can happen." << endl;
-				else
-				{
-					perror("ERROR | recvfrom():");
-				}
+				// Recv failed...we don't want to end just yet
+				perror("recvfrom()");
 			}
 		}
 	}
@@ -143,22 +141,9 @@ int main(int argc, char * argv[])
 		close(udpSocketNumber);
 	}
 
-	// Free up our outgoing buffer
-	if(incomingBuffer != nullptr)
-	{
-		free(incomingBuffer);
-		incomingBuffer = nullptr;
-	}
-
-	// Free up the heap's server datagram
-	if(outgoingDG != nullptr)
-	{
-		delete outgoingDG;
-		outgoingDG = nullptr;
-	}
-
 	return retval;
 }
+
 
 void GetOptions(int argc, char* argv[], int& portNumber, bool& debugFlag)
 {
@@ -201,13 +186,12 @@ void DisplayMenu(char* argv[])
 //--
 inline void PrintClientDatagramInfo(void* buffer)
 {
-	// The byte orders are not converted
 	ClientDatagram* cd = (ClientDatagram*)buffer;
-	cout << "ClientDatagram - seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)cd + sizeof(ClientDatagram) << endl;
+	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)cd + sizeof(ClientDatagram) << endl;
 }
 //--
 inline void PrintServerDatagramInfo(ServerDatagram* buffer)
 {
 	ServerDatagram* sd = (ServerDatagram*)buffer;
-	cout << "ClientDatagram - seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
+	cout << "ClientDatagram-- seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
 }
