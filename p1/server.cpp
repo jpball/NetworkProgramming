@@ -20,8 +20,7 @@ using namespace std;
 
 void GetOptions(int argc, char* argv[], int& portNumber, bool& debugFlag);
 void DisplayMenu(char* argv[]);
-inline void PrintClientDatagramInfo(void* buffer);
-inline void PrintServerDatagramInfo(ServerDatagram* buffer);
+inline string ClientDatagramToString(ClientDatagram* p_cd);
 
 #define HELP_MENU_RV 10;
 #define SOCKET_ERROR_RV 11;
@@ -30,17 +29,18 @@ inline void PrintServerDatagramInfo(ServerDatagram* buffer);
 
 int main(int argc, char * argv[])
 {
-	int retval = 0;
-	const size_t BUFFER_SIZE = 1024;
-	int udpSocketNumber;
-	int serverPort = PORT_NUMBER;
+	int retval = 0; // 0 means success, otherwise some error based on a predefined macro
+	const size_t BUFFER_SIZE = 2048; // Determine the number of bytes
+	int udpSocketNumber; // Our socket file descriptor
+	int serverPort = PORT_NUMBER; // The port to use for our incoming/outgoing connection
 	bool isDebugMode = false;
 
-	struct sockaddr_in serverSockAddr;
-	struct sockaddr_in clientSockAddr;
-	unsigned char buffer[BUFFER_SIZE];
-	ssize_t bytesReceived;
-	socklen_t l = sizeof(clientSockAddr);
+	struct sockaddr_in serverSockAddr; // Hold the personal connection details
+	struct sockaddr_in clientSockAddr; // Hold the outgoing connection details
+	unsigned char buffer[BUFFER_SIZE]; // Act as our data construction buffer for the incoming bytes
+	ssize_t bytesReceived; // Will hold the number of bytes we recieve from recvfrom()
+	ssize_t bytesSent; // Will keep track of how many bytes are sent back to the client
+	socklen_t clientSocketLength = sizeof(clientSockAddr);
 	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
 
 	try
@@ -77,7 +77,7 @@ int main(int argc, char * argv[])
 		{
 			memset(buffer, 0, BUFFER_SIZE); // Wipe out any garbage/leftover values from our buffer
 
-			bytesReceived = recvfrom(udpSocketNumber, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &clientSockAddr, &l);
+			bytesReceived = recvfrom(udpSocketNumber, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &clientSockAddr, &clientSocketLength);
 
 			if (bytesReceived > 0)
 			{
@@ -96,8 +96,7 @@ int main(int argc, char * argv[])
 
 				if(isDebugMode)
 				{
-					cout << "Recieved datagram!" << endl;
-					PrintClientDatagramInfo(&buffer);
+					cout << "Recieved datagram | " << ClientDatagramToString((ClientDatagram*)buffer) << endl;
 				}
 
 				// Now that we got our incoming data, let's use it and send back a response datagram
@@ -106,7 +105,7 @@ int main(int argc, char * argv[])
 				outgoingDG.sequence_number = htonl(incomingDG->sequence_number);
 				outgoingDG.datagram_length = htons(bytesReceived);
 
-				ssize_t bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
+				bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
 				if(bytesSent != sizeof(ServerDatagram))
 				{
 					// We sent less than we wanted
@@ -184,14 +183,7 @@ void DisplayMenu(char* argv[])
 	cout << "   -d enables debug mode" << endl;
 }
 //--
-inline void PrintClientDatagramInfo(void* buffer)
+inline string ClientDatagramToString(ClientDatagram* p_cd)
 {
-	ClientDatagram* cd = (ClientDatagram*)buffer;
-	cout << "ClientDatagram-- seqnum: " << cd->sequence_number << " pl: " << cd->payload_length << " m: " << (char*)cd + sizeof(ClientDatagram) << endl;
-}
-//--
-inline void PrintServerDatagramInfo(ServerDatagram* buffer)
-{
-	ServerDatagram* sd = (ServerDatagram*)buffer;
-	cout << "ClientDatagram-- seqnum: " << sd->sequence_number << " dl: " << sd->datagram_length << endl;
+	return string("ClientDatagram | seqnum: " + to_string(p_cd->sequence_number) + " pl: " + to_string(p_cd->payload_length) + " m: " + ((char*)p_cd + sizeof(ClientDatagram)));
 }

@@ -22,16 +22,20 @@ using namespace std;
 
 void GetOptions(int argc, char* argv[], int& portNumber, string& serverAddress, bool& debugFlag, uint32_t& msDelay, uint32_t& numDG);
 void DisplayMenu(char* argv[]);
-void PrintClientDatagramInfo(void* buffer);
-void PrintServerDatagramInfo(ServerDatagram* buffer);
+inline string ClientDatagramToString(ClientDatagram* p_cd, bool isInNetworkOrder);
+inline string ServerDatagramToString(ServerDatagram* p_sd, bool isInNetworkOrder);
+
+#define RECV_ATTEMPT_COUNT 9
 
 #define INVALID_OPTION 9
 #define HELP_MENU_RV 10
 #define SOCKET_ERROR_RV 11
 #define SERVER_CONNECTION_ERROR_RV 12
 #define MESSAGE_SEND_ERROR_RV 13
-#define MESSAGE_RECV_ERROR_RV 14;
-#define FCNTL_ERROR_RV 15;
+#define MESSAGE_RECV_ERROR_RV 14
+#define FCNTL_ERROR_RV 15
+#define OB_MALLOC_FAIL_RV 16
+#define IB_MALLOC_FAIL_RV 17
 
 #define MESSAGE "jball3"
 
@@ -107,7 +111,7 @@ int main(int argc, char * argv[])
 		int retV = fcntl(udpSocketNumber, F_SETFL, O_NONBLOCK); // Set our socket to NonBlocking
 		if(retV == -1)
 		{
-			perror("ERROR fcntl():");
+			perror("ERROR, fcntl():");
 			throw FCNTL_ERROR_RV;
 		}
 
@@ -116,7 +120,18 @@ int main(int argc, char * argv[])
 		// Allocate our buffers on the heap to be used later
 		// Doing this before out datagrams go out helps with efficiency
 		outgoingBuffer = (char*)malloc(EXP_OUTGOING_DATAGRAM_SIZE);
+		if(outgoingBuffer == nullptr)
+		{
+			cerr << "Failed to allocate outgoing buffer" << endl;
+			throw OB_MALLOC_FAIL_RV;
+		}
+
 		incomingBuffer = (char*)malloc(EXP_INCOMING_DATAGRAM_SIZE);
+		if(incomingBuffer == nullptr)
+		{
+			cerr << "Failed to allocate incoming buffer" << endl;
+			throw IB_MALLOC_FAIL_RV;
+		}
 
 		/*
 			BUILDING THE BASICS FOR OUTGOING DATAGRAM
@@ -145,80 +160,80 @@ int main(int argc, char * argv[])
 			if(bytesSent != EXP_OUTGOING_DATAGRAM_SIZE)
 			{
 				cerr << "Sent: " << bytesSent << " expected to send: " << EXP_OUTGOING_DATAGRAM_SIZE << endl;
-				perror("sendto()");
+				perror("ERROR, sendto()");
 			}
 			else
 			{
 				// Our packet was sucessfully sent
-				if(isDebugMode) cout << "Sending success!" << endl;
+				if(isDebugMode) cout << "Sent datagram to server: " << ClientDatagramToString(outgoingDG, true) << endl;
 				numPacketsSent++; // Another happy landing!
 				// We want to store the non-byte-ordered sequence number for use later
 				seqNumbersSent.insert(ntohl(outgoingDG->sequence_number));
 			}
 
-
 			// Delay before the next outgoing datagram if we want to
-			if(isDebugMode) cout << "Delaying... " << microsecDelay << " microseconds" << endl;
-			usleep(microsecDelay);
-			if(isDebugMode) cout << "Delay over..." << endl;
-
+			if(usleep(microsecDelay) == -1)
+			{
+				perror("ERROR, usleep():");
+			}
 
 			/*
 			=======================
 				RECIEVING
 			=======================
 			*/
-
-			bytesReceived = recvfrom(udpSocketNumber, incomingBuffer, EXP_INCOMING_DATAGRAM_SIZE, 0, (struct sockaddr *) &serverSockAddr, &incomingSocketLength);
-
-			if(isDebugMode) cout << "++ Bytes rec: " << bytesReceived << endl;
-
-			if(bytesReceived > 0)
+			for(int recvAttempt = 0; recvAttempt < RECV_ATTEMPT_COUNT; recvAttempt++)
 			{
-				// We recieved some data, so let's try to interpret it
+				bytesReceived = recvfrom(udpSocketNumber, incomingBuffer, EXP_INCOMING_DATAGRAM_SIZE, 0, (struct sockaddr *) &serverSockAddr, &incomingSocketLength);
 
-				ServerDatagram* incomingDG = (ServerDatagram*)(incomingBuffer);
-				incomingDG->datagram_length = ntohs(incomingDG->datagram_length); // network to host short
-				incomingDG->sequence_number = ntohl(incomingDG->sequence_number); // network to host long
-
-				if((setIT = seqNumbersSent.find(incomingDG->sequence_number)) != seqNumbersSent.end())
+				if(bytesReceived > 0)
 				{
-					// The packet we recieved was one we sent out previously
-					seqNumbersSent.erase(setIT);
+					// We recieved some data, so let's try to interpret it
+					ServerDatagram* incomingDG = (ServerDatagram*)(incomingBuffer);
+					incomingDG->datagram_length = ntohs(incomingDG->datagram_length); // network to host short
+					incomingDG->sequence_number = ntohl(incomingDG->sequence_number); // network to host long
+
+					// Print out info alerting us to a datagram reception
+					if(isDebugMode)
+					{
+						cout << "Recieved datagram from server: " << ServerDatagramToString(incomingDG, false) << endl;
+					}
+
+
+					// Check if the recieved sequence number is in our set of send sequence numbers...
+					if((setIT = seqNumbersSent.find(incomingDG->sequence_number)) != seqNumbersSent.end())
+					{
+						// The packet we recieved was one we sent out previously
+						// So remove it from our list of outgoing
+						seqNumbersSent.erase(setIT);
+					}
+					else
+					{
+						// Unknown packet recieved
+						cerr << "ERROR: Unknown sequence number recieved: " << incomingDG->sequence_number << endl;
+						// We don't want to stop here since we may still recieve valid ones
+					}
+
 				}
 				else
 				{
-					// Unknown packet recieved
-					cerr << "ERROR: Unknown sequence number recieved: " << incomingDG->sequence_number << endl;
-					// We don't want to stop here since we may still recieve valid ones
-				}
+					// Something happened and no data was recieved
 
-				// Print out info alerting us to a datagram reception
-				if(isDebugMode)
-				{
-					cout << "Recieved datagram from server: ";
-					PrintServerDatagramInfo(incomingDG);
-				}
-			}
-			else
-			{
-				// Something happened and no data was recieved
+					// 	These flags are set when there was nothing to read
+					if(errno == EAGAIN || errno == EWOULDBLOCK)
+					{
+						continue; // We just wanna move on to the next datagram
+					}
 
-				// 	These flags are set when there was nothing to read
-				if(errno == EAGAIN || errno == EWOULDBLOCK)
-				{
-					if(isDebugMode) cout << "Nothing recieved..not blocking" << endl;
-					continue; // We just wanna move on to the next datagram
-				}
-
-				if(bytesReceived == 0)
-				{
-					cout << "Recieved zero bytes -- If you see this, something very weird happened!" << endl;
-				}
-				else
-				{
-					// We have a real error at this point
-					perror("recvfrom()");
+					if(bytesReceived == 0)
+					{
+						cout << "Recieved zero bytes -- If you see this, something very weird happened!" << endl;
+					}
+					else
+					{
+						// We have a real error at this point
+						perror("ERROR, recvfrom()");
+					}
 				}
 			}
 		}
@@ -322,15 +337,18 @@ void DisplayMenu( char* argv[])
 	cout << setfill('.') << setiosflags(ios_base::left) << setw(45) << "  -n overrides number of datagrams " 	<< "defaults to " 	<< NUMBER_OF_DATAGRAMS 	<< endl;
 }
 //--
-void PrintClientDatagramInfo(void* buffer)
+inline string ClientDatagramToString(ClientDatagram* p_cd, bool isInNetworkOrder = false)
 {
-	ClientDatagram* cd = (ClientDatagram*)buffer;
-	cout << "ClientDatagram-- seqnum: " << ntohl(cd->sequence_number) << " pl: " << ntohs(cd->payload_length) << " m: " << (char*)(cd + sizeof(ClientDatagram)) << endl;
+	return string(
+		"ClientDatagram | seqnum: " + to_string( isInNetworkOrder ? ntohl(p_cd->sequence_number) : p_cd->sequence_number)
+		+ " pl: " + to_string( isInNetworkOrder ? ntohl(p_cd->payload_length) : p_cd->payload_length)
+		+ " m: " + ((char*)p_cd + sizeof(ClientDatagram)));
 }
 //--
-void PrintServerDatagramInfo(ServerDatagram* buffer)
+inline string ServerDatagramToString(ServerDatagram* p_sd, bool isInNetworkOrder = false)
 {
-	ServerDatagram* sd = (ServerDatagram*)buffer;
-	cout << "ClientDatagram-- seqnum: " << ntohl(sd->sequence_number) << " dl: " << ntohs(sd->datagram_length) << endl;
-
+	return string(
+		"Server Datagram | seqnum: " + to_string( isInNetworkOrder ? ntohl(p_sd->sequence_number) : p_sd->sequence_number)
+		+ " dl: " + to_string( isInNetworkOrder ? ntohs(p_sd->datagram_length) :p_sd->datagram_length)
+	);
 }
