@@ -125,6 +125,7 @@ int main(int argc, char * argv[])
 			cerr << "Failed to allocate outgoing buffer" << endl;
 			throw OB_MALLOC_FAIL_RV;
 		}
+		memset(outgoingBuffer, 0, EXP_OUTGOING_DATAGRAM_SIZE); // Get rid of any garbage values
 
 		incomingBuffer = (char*)malloc(EXP_INCOMING_DATAGRAM_SIZE);
 		if(incomingBuffer == nullptr)
@@ -132,6 +133,8 @@ int main(int argc, char * argv[])
 			cerr << "Failed to allocate incoming buffer" << endl;
 			throw IB_MALLOC_FAIL_RV;
 		}
+		memset(incomingBuffer, 0, EXP_INCOMING_DATAGRAM_SIZE); // Get rid of any garbage values
+
 
 		/*
 			BUILDING THE BASICS FOR OUTGOING DATAGRAM
@@ -143,7 +146,8 @@ int main(int argc, char * argv[])
 		outgoingDG->sequence_number = 0;
 
 		// Copy our message after the datagram
-		strcpy(outgoingBuffer + sizeof(ClientDatagram), MESSAGE); // Copy the message after the datagram metadata
+		// (char*)(outgoingDG + 1) will return the address right after the datagram
+		strncpy((char*)(outgoingDG + 1), MESSAGE, MESSAGE_SIZE); // Copy the message after the datagram metadata
 
 		// We wanna send a certain number of datagrams out
 		for(size_t dgNum = 0; dgNum < numDatagrams; dgNum++)

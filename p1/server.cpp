@@ -36,12 +36,15 @@ int main(int argc, char * argv[])
 	bool isDebugMode = false;
 
 	struct sockaddr_in serverSockAddr; // Hold the personal connection details
+	memset((void*)&serverSockAddr, 0, sizeof(serverSockAddr)); // Clean out garbage values
 	struct sockaddr_in clientSockAddr; // Hold the outgoing connection details
+	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr)); // Clean out garbage values
+
 	unsigned char buffer[BUFFER_SIZE]; // Act as our data construction buffer for the incoming bytes
-	ssize_t bytesReceived; // Will hold the number of bytes we recieve from recvfrom()
-	ssize_t bytesSent; // Will keep track of how many bytes are sent back to the client
+
+	ssize_t bytesReceived = 0; // Will hold the number of bytes we recieve from recvfrom()
+	ssize_t bytesSent = 0; // Will keep track of how many bytes are sent back to the client
 	socklen_t clientSocketLength = sizeof(clientSockAddr);
-	memset((void *) &clientSockAddr, 0, sizeof(clientSockAddr));
 
 	try
 	{
@@ -58,7 +61,6 @@ int main(int argc, char * argv[])
 		}
 
 		// Configure our connection details
-		memset(&serverSockAddr, 0, sizeof(sockaddr_in));
 		serverSockAddr.sin_family = AF_INET; // Address family (ipv4 or ipv6, AF_INET allows both)
 		serverSockAddr.sin_addr.s_addr = INADDR_ANY; // Any ip address
 		serverSockAddr.sin_port = htons(serverPort); // The port we want to use
@@ -105,7 +107,7 @@ int main(int argc, char * argv[])
 				outgoingDG.sequence_number = htonl(incomingDG->sequence_number);
 				outgoingDG.datagram_length = htons(bytesReceived);
 
-				bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(outgoingDG), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
+				bytesSent = sendto(udpSocketNumber, &outgoingDG, sizeof(ServerDatagram), 0, (sockaddr*)&clientSockAddr, sizeof(clientSockAddr));
 				if(bytesSent != sizeof(ServerDatagram))
 				{
 					// We sent less than we wanted
