@@ -17,10 +17,11 @@ using namespace std;
 #define DEFAULT_ADDRESS "127.0.0.1"
 
 #define SOCKET_FAIL 10;
+#define HOSTENTRY_FAIL 11;
 
 void GetOpt(int argc, char* argv[]);
 void DisplayHelpMenu();
-void SendMessageToServer(const string message);
+string ObtainMessage();
 
 int main(int argc, char* argv[])
 {
@@ -29,6 +30,8 @@ int main(int argc, char* argv[])
     string serverAddress = DEFAULT_ADDRESS; // The IP address of the server we are connecting to
     int serverPort = DEFAULT_PORT; // The server port we are connecting to
 
+    hostent* serverHostEntry;
+    sockaddr_in serverSockAddr;
 
     try
     {
@@ -42,60 +45,48 @@ int main(int argc, char* argv[])
             throw SOCKET_FAIL;
         }
 
+        serverHostEntry = gethostbyname(serverAddress.c_str());
+        if(serverHostEntry == nullptr)
+        {
+            close(socketFD);
+            cerr << "ERROR, no such host: " << serverAddress << endl;
+            throw HOSTENTRY_FAIL;
+        }
+
+        // Clean up our connction details struct
+        memset(&serverSockAddr, 0, sizeof(serverSockAddr));
+        // We wanna use internet protocol
+        serverSockAddr.sin_family = AF_INET;
+        // Copy over some connection details from a connection entry to our detail struct
+        memmove(&serverSockAddr.sin_addr.s_addr, serverHostEntry->h_addr, serverHostEntry->h_length);
+        // Store the server port in our connection detail struct
+        serverSockAddr.sin_port = htons(serverPort);
 
         #pragma endregion
 
         #pragma region UserInput
-        /*
+
         // Loop to gather message (OVER will end this loop)
-
-        string fullOutgoingMessage;
-        string userInput;
-
-
+        ssize_t bytesSent;
         while(true)
         {
-            cout << "> "; // Print out prompt indicator
-            getline(cin, userInput); // Get user input up until newline
+            string fullOutgoingMessage = ObtainMessage();
+            cout << "FULL MESSAGE: ";
+            cout << fullOutgoingMessage << endl;
 
-            if(userInput.find("QUIT") != string::npos)
+            bytesSent = send(socketFD, fullOutgoingMessage.c_str(), fullOutgoingMessage.size() + 1, 0);
+            if(bytesSent != -1)
             {
-                // We found 'QUIT' in the newly entered string
-                // So let's quit out of the loop
-                cout << "Quitting..." << endl;
-                break;
+                cout << "Success" << endl;
             }
-
-            size_t overIndex = userInput.find("OVER");
-            if(overIndex != string::npos)
+            else
             {
-                // Our inputting message contains the word OVER
-                // And we only want up to that word
-                // Note, we want to send the word "OVER" too, so add 4 to the offset
-                fullOutgoingMessage.append(userInput.substr(0, overIndex + 4));
-
-                // Send it to our server
-                SendMessageToServer(fullOutgoingMessage);
+                cout << "Fail" << endl;
             }
-
-            // Add this newly entered string to our overarching message
-            fullOutgoingMessage.append(userInput);
 
         }
-        do
-        {
 
 
-
-            fullOutgoingMessage.append(userInput);
-
-
-        }while(userInput.find("QUIT") == string::npos);
-
-        cout << "FULL MESSAGE:" << endl;
-        cout << fullOutgoingMessage << endl;
-
-        */
         #pragma endregion
     }
     catch(int value)
@@ -108,7 +99,7 @@ int main(int argc, char* argv[])
     }
 
     cout << "Client exiting normally..." << endl;
-    return 0;
+    return retVal;
 }
 
 //--
@@ -156,7 +147,39 @@ void DisplayHelpMenu()
     cout << "-p port  overrides the default port of " << DEFAULT_PORT << endl;
 }
 //--
-void SendMessageToServer(const string message)
+// Will return once a message featuring "OVER" is entered
+string ObtainMessage()
 {
-    cout << "Server probably recieved: |" << message << "|" << endl;
+    string fullOutgoingMessage;
+    string userInputBuffer;
+
+    while(true)
+    {
+        cout << "> "; // Print out prompt indicator
+        getline(cin, userInputBuffer); // Get user input up until newline
+
+        if(userInputBuffer.find("QUIT") != string::npos)
+        {
+            // We found 'QUIT' in the newly entered string
+            // So let's quit out of the loop
+            cout << "Quitting..." << endl;
+            break;
+        }
+
+        size_t overIndex = userInputBuffer.find("OVER");
+        if(overIndex != string::npos)
+        {
+            // Our inputting message contains the word OVER
+            // And we only want up to that word
+            // Note, we want to send the word "OVER" too, so add 4 to the offset
+            fullOutgoingMessage.append(userInputBuffer.substr(0, overIndex + 4));
+            break;
+        }
+        else
+        {
+            // Add this newly entered string to our overarching message
+            fullOutgoingMessage.append(userInputBuffer);
+        }
+    }
+    return fullOutgoingMessage;
 }
