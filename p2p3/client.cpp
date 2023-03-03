@@ -62,6 +62,12 @@ int main(int argc, char* argv[])
         // Store the server port in our connection detail struct
         serverSockAddr.sin_port = htons(serverPort);
 
+        if(connect(socketFD, (const sockaddr*)&serverSockAddr, socklen_t(sizeof(serverSockAddr))) == -1)
+        {
+            perror("ERROR, connect()");
+            throw 99;
+        }
+
         #pragma endregion
 
         #pragma region UserInput
