@@ -16,6 +16,7 @@ using namespace std;
 #define DEFAULT_PORT 9838
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define LISTEN_BACKLOG 5
+#define DATA_BUFFER_SIZE 2048
 
 int main(int argc, char* argv[])
 {
@@ -65,16 +66,15 @@ int main(int argc, char* argv[])
             throw 103;
         }
 
-        char buffer[2048];
+        char buffer[DATA_BUFFER_SIZE];
         while(true)
         {
-            ssize_t br = recv(connectedSocket_fd, (void*)&buffer, 2048, 0);
+            ssize_t br = recv(connectedSocket_fd, (void*)&buffer, DATA_BUFFER_SIZE, 0);
 
             if(br == 0) break;
             if(br == -1)
             {
                 perror("recv()");
-                throw 101;
             }
 
 
