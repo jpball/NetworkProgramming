@@ -25,7 +25,6 @@ using namespace std;
 
 void GetOpt(int argc, char* argv[]);
 void DisplayHelpMenu();
-string ObtainMessage();
 int EstablishConnection(const string& serverAddress, const int& serverPort);
 
 int main(int argc, char* argv[])
@@ -43,19 +42,39 @@ int main(int argc, char* argv[])
         // Loop to gather message (OVER will end this loop)
         ssize_t bytesSent;
         ssize_t bytesRecv;
+        string message;
+
         char recvBuffer[RECV_BUFFER_SIZE];
         memset(&recvBuffer, 0, RECV_BUFFER_SIZE);
+        bool messageOver = false;
+
         while(true)
         {
-            string outgoingMessage = ObtainMessage();
-
-            bytesSent = send(socketFD, outgoingMessage.c_str(), outgoingMessage.size() + 1, 0);
-            if(bytesSent != outgoingMessage.size() + 1)
+            messageOver = false;
+            while(!messageOver)
             {
-                // Abnormal number of bytes sent
-                perror("ERROR, send()");
-                break;
+                cout << "> "; // Print out prompt indicator
+                getline(cin, message); // Get user input up until newline
+
+                size_t overIndex = message.find("OVER");
+                if(overIndex != string::npos)
+                {
+                    // Our inputed message contains the word OVER
+                    // And we only want up to that word
+                    // Note, we want to send the word "OVER" too, so add 4 to the offset
+                    message.erase(message.begin() + overIndex+4, message.end());
+                    messageOver = true;
+                }
+
+                bytesSent = send(socketFD, message.c_str(), message.size() + 1, 0);
+                if(bytesSent != message.size() + 1)
+                {
+                    // Abnormal number of bytes sent
+                    perror("ERROR, send()");
+                }
             }
+
+
 
             // Bytes sent is normal
             // Now we want to check to potentially receive from the server
@@ -112,15 +131,13 @@ int EstablishConnection(const string& serverAddress, const int& serverPort)
     }
 
     // Enable port reusal
-    // int optval = 1;
-    // if(setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) == -1)
-    // {
-    //     close(socketFD); // Close on fail because main doesn't know the socket yet
-    //     perror("ERROR, setsockopt():");
-    //     throw SETSOCKOPT_FAIL;
-    // }
-
-    //fcntl(socketFD, F_SETFL, O_NONBLOCK);
+    int optval = 1;
+    if(setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) == -1)
+    {
+        close(socketFD); // Close on fail because main doesn't know the socket yet
+        perror("ERROR, setsockopt():");
+        throw SETSOCKOPT_FAIL;
+    }
 
     // Obtain the connection details for our seever
     hostent* serverHostEntry = gethostbyname(serverAddress.c_str());
@@ -196,23 +213,3 @@ void DisplayHelpMenu()
     cout << "-p port  overrides the default port of " << DEFAULT_PORT << endl;
 }
 //--
-// Will return once a message featuring "OVER" is entered
-string ObtainMessage()
-{
-    string userInputBuffer;
-
-    cout << "> "; // Print out prompt indicator
-    getline(cin, userInputBuffer); // Get user input up until newline
-
-    size_t overIndex = userInputBuffer.find("OVER");
-    if(overIndex != string::npos)
-    {
-        // Our inputting message contains the word OVER
-        // And we only want up to that word
-        // Note, we want to send the word "OVER" too, so add 4 to the offset
-        return userInputBuffer.substr(0, overIndex + 4);
-    }
-
-    // Add this newly entered string to our overarching message
-    return userInputBuffer;
-}
