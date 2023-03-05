@@ -10,15 +10,18 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 using namespace std;
 
 #define DEFAULT_PORT 9838
 #define DEFAULT_ADDRESS "127.0.0.1"
+#define RECV_BUFFER_SIZE 2048
 
 #define SOCKET_FAIL 10
 #define HOSTENTRY_FAIL 11
 #define CONNECT_FAIL 12
+#define SETSOCKOPT_FAIL 13
 
 void GetOpt(int argc, char* argv[]);
 void DisplayHelpMenu();
@@ -32,7 +35,6 @@ int main(int argc, char* argv[])
     string serverAddress = DEFAULT_ADDRESS; // The IP address of the server we are connecting to
     int serverPort = DEFAULT_PORT; // The server port we are connecting to
 
-
     try
     {
         // Establish TCP connection
@@ -40,20 +42,46 @@ int main(int argc, char* argv[])
 
         // Loop to gather message (OVER will end this loop)
         ssize_t bytesSent;
+        ssize_t bytesRecv;
+        char recvBuffer[RECV_BUFFER_SIZE];
+        memset(&recvBuffer, 0, RECV_BUFFER_SIZE);
         while(true)
         {
-            string fullOutgoingMessage = ObtainMessage();
-            cout << "FULL MESSAGE: ";
-            cout << fullOutgoingMessage << endl;
+            string outgoingMessage = ObtainMessage();
 
-            bytesSent = send(socketFD, fullOutgoingMessage.c_str(), fullOutgoingMessage.size() + 1, 0);
-            if(bytesSent != -1)
+            bytesSent = send(socketFD, outgoingMessage.c_str(), outgoingMessage.size() + 1, 0);
+            if(bytesSent != outgoingMessage.size() + 1)
             {
-                cout << "Success" << endl;
+                // Abnormal number of bytes sent
+                perror("ERROR, send()");
+                break;
+            }
+
+            // Bytes sent is normal
+            // Now we want to check to potentially receive from the server
+            bytesRecv = recv(socketFD, (void*)&recvBuffer, RECV_BUFFER_SIZE, 0);
+            if(bytesRecv <= 0)
+            {
+                switch(bytesRecv)
+                {
+                    case(0):
+                    {
+                        cout << "Server has closed..." << endl;
+                        break;
+                    }
+                    case(-1):
+                    default:
+                    {
+                        perror("ERROR, recv()");
+                        break;
+                    }
+                }
             }
             else
             {
-                cout << "Fail" << endl;
+                cout << "Recieved from server: " << recvBuffer << endl;
+                // MUST BE LAST STEP
+                memset(&recvBuffer, 0, RECV_BUFFER_SIZE); // Reset our buffer
             }
         }
 
@@ -75,6 +103,7 @@ int main(int argc, char* argv[])
 // Returns the connect socket number
 int EstablishConnection(const string& serverAddress, const int& serverPort)
 {
+    // Attempt to create our socket
     int socketFD = socket(PF_INET, SOCK_STREAM, 0);
     if(socketFD < 0)
     {
@@ -82,27 +111,40 @@ int EstablishConnection(const string& serverAddress, const int& serverPort)
         throw SOCKET_FAIL;
     }
 
+    // Enable port reusal
+    // int optval = 1;
+    // if(setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) == -1)
+    // {
+    //     close(socketFD); // Close on fail because main doesn't know the socket yet
+    //     perror("ERROR, setsockopt():");
+    //     throw SETSOCKOPT_FAIL;
+    // }
+
+    //fcntl(socketFD, F_SETFL, O_NONBLOCK);
+
+    // Obtain the connection details for our seever
     hostent* serverHostEntry = gethostbyname(serverAddress.c_str());
     if(serverHostEntry == nullptr)
     {
-        close(socketFD);
+        close(socketFD); // Close on fail because main doesn't know the socket yet
         cerr << "ERROR, no such host: " << serverAddress << endl;
         throw HOSTENTRY_FAIL;
     }
 
-    sockaddr_in serverSockAddr;
+    sockaddr_in serverSockAddrInfo; // Will store the details of our server
     // Clean up our connction details struct
-    memset(&serverSockAddr, 0, sizeof(serverSockAddr));
+    memset(&serverSockAddrInfo, 0, sizeof(serverSockAddrInfo));
     // We wanna use internet protocol
-    serverSockAddr.sin_family = AF_INET;
+    serverSockAddrInfo.sin_family = AF_INET;
     // Copy over some connection details from a connection entry to our detail struct
-    memmove(&serverSockAddr.sin_addr.s_addr, serverHostEntry->h_addr, serverHostEntry->h_length);
+    memmove(&serverSockAddrInfo.sin_addr.s_addr, serverHostEntry->h_addr, serverHostEntry->h_length);
     // Store the server port in our connection detail struct
-    serverSockAddr.sin_port = htons(serverPort);
+    serverSockAddrInfo.sin_port = htons(serverPort);
 
-    if(connect(socketFD, (const sockaddr*)&serverSockAddr, socklen_t(sizeof(serverSockAddr))) == -1)
+    if(connect(socketFD, (const sockaddr*)&serverSockAddrInfo, socklen_t(sizeof(serverSockAddrInfo))) == -1)
     {
         perror("ERROR, connect()");
+        close(socketFD); // Close on fail because main doesn't know the socket yet
         throw CONNECT_FAIL;
     }
 
@@ -157,36 +199,20 @@ void DisplayHelpMenu()
 // Will return once a message featuring "OVER" is entered
 string ObtainMessage()
 {
-    string fullOutgoingMessage;
     string userInputBuffer;
 
-    while(true)
+    cout << "> "; // Print out prompt indicator
+    getline(cin, userInputBuffer); // Get user input up until newline
+
+    size_t overIndex = userInputBuffer.find("OVER");
+    if(overIndex != string::npos)
     {
-        cout << "> "; // Print out prompt indicator
-        getline(cin, userInputBuffer); // Get user input up until newline
-
-        if(userInputBuffer.find("QUIT") != string::npos)
-        {
-            // We found 'QUIT' in the newly entered string
-            // So let's quit out of the loop
-            cout << "Quitting..." << endl;
-            break;
-        }
-
-        size_t overIndex = userInputBuffer.find("OVER");
-        if(overIndex != string::npos)
-        {
-            // Our inputting message contains the word OVER
-            // And we only want up to that word
-            // Note, we want to send the word "OVER" too, so add 4 to the offset
-            fullOutgoingMessage.append(userInputBuffer.substr(0, overIndex + 4));
-            break;
-        }
-        else
-        {
-            // Add this newly entered string to our overarching message
-            fullOutgoingMessage.append(userInputBuffer);
-        }
+        // Our inputting message contains the word OVER
+        // And we only want up to that word
+        // Note, we want to send the word "OVER" too, so add 4 to the offset
+        return userInputBuffer.substr(0, overIndex + 4);
     }
-    return fullOutgoingMessage;
+
+    // Add this newly entered string to our overarching message
+    return userInputBuffer;
 }
