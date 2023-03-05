@@ -33,3 +33,7 @@
 
 *.DS_Store
 *.vscode
+p1/client
+p1/server
+p2p3/client
+p2p3/server
