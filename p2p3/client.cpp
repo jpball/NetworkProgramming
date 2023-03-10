@@ -30,7 +30,7 @@ int EstablishConnection(const string& serverAddress, const int& serverPort);
 int main(int argc, char* argv[])
 {
     int retVal = 0;
-    int socketFD; // The socket number we will be using
+    int socketFD = -1; // The socket number we will be using
     string serverAddress = DEFAULT_ADDRESS; // The IP address of the server we are connecting to
     int serverPort = DEFAULT_PORT; // The server port we are connecting to
 
@@ -74,8 +74,6 @@ int main(int argc, char* argv[])
                 }
             }
 
-
-
             // Bytes sent is normal
             // Now we want to check to potentially receive from the server
             bytesRecv = recv(socketFD, (void*)&recvBuffer, RECV_BUFFER_SIZE, 0);
@@ -115,7 +113,6 @@ int main(int argc, char* argv[])
         close(socketFD);
     }
 
-    cout << "Client exiting normally..." << endl;
     return retVal;
 }
 //--
