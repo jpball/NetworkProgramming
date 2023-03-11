@@ -18,12 +18,13 @@ using namespace std;
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define RECV_BUFFER_SIZE 2048
 
+#define HELP_MENU_PRINT 5
 #define SOCKET_FAIL 10
 #define HOSTENTRY_FAIL 11
 #define CONNECT_FAIL 12
 #define SETSOCKOPT_FAIL 13
 
-void GetOpt(int argc, char* argv[]);
+bool GetOpt(int argc, char* argv[], int& serverPort, string& serverAddr);
 void DisplayHelpMenu();
 int EstablishConnection(const string& serverAddress, const int& serverPort);
 
@@ -36,6 +37,13 @@ int main(int argc, char* argv[])
 
     try
     {
+        if(!GetOpt(argc, argv, serverPort, serverAddress))
+        {
+            DisplayHelpMenu();
+            throw HELP_MENU_PRINT;
+        }
+
+
         // Establish TCP connection
         socketFD = EstablishConnection(serverAddress, serverPort);
 
@@ -173,30 +181,35 @@ REQUIRED OPTIONS
 - `p` overrides the default destination port.
 - `d` overrides the default destination address.
 */
-void GetOpt(int argc, char* argv[])
+bool GetOpt(int argc, char* argv[], int& serverPort, string& serverAddr)
 {
     int c;
-
-    while ((c = getopt(argc, argv, "")) != -1)
+    while ((c = getopt(argc, argv, "hp:d:")) != -1)
     {
         switch(c)
         {
-            case('h'):
-            {
-                break;
-            }
             case('p'):
             {
+                serverPort = atoi(optarg);
                 break;
             }
             case('d'):
             {
+                serverAddr = string(optarg);
                 break;
             }
+            case('h'):
+            {
+                return false;
+            }
             default:
-                break;
+            {
+                cerr << "Invalid option provided: " << c << endl;
+                return false;
+            }
         }
     }
+    return true;
 }
 //--
 /*
