@@ -21,7 +21,7 @@ deps	= $(srcs:.cpp=.d)
 all		: client server
 
 client	: 	$(COBJS)
-		$(CC) -o $@ $(COBJS)
+		$(CC) -lncurses -o $@ $(COBJS)
 
 %.o: %.cpp
 		$(CC) -MMD -MP $(CFLAGS) -c $< -o $@
