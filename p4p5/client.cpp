@@ -34,6 +34,7 @@ void UpdateConvoWindowWithNewMessage(string message);
 inline void ResetInputCursor();
 inline void DrawConvoWindowBox();
 inline void DrawInputWindowBox();
+void ResetInputWindow();
 
 bool continueFlag;
 
@@ -71,25 +72,16 @@ int main(int argc, char* argv[])
         {
             UpdateConvoWindowWithNewMessage(inputBuffer.str());
             wrefresh(convoWindow);
-            RemoveLastCharacter(inputBuffer);
-            DrawInputWindowBox();
+            ResetInputWindow();
             inputBuffer.str("");
-            ResetInputCursor();
-
-            wrefresh(inputWindow);
         }
         else if(res == 127) // Backspace
         {
             if(getcurx(inputWindow) <= 1) continue; // We don't want to go off the window or onto the border
-            
-            mvwaddstr(convoWindow, 5, 1, inputBuffer.str().c_str());
-            
-            mvwaddstr(convoWindow, 6, 1, inputBuffer.str().c_str());
-            wrefresh(convoWindow);
-            
-
+            RemoveLastCharacter(inputBuffer);
+            // Remove the character on the screen we are deleting
             mvwaddch(inputWindow, 1, getcurx(inputWindow) - 1, ' ');
-            wmove(inputWindow, 1, getcurx(inputWindow) - 1);
+            wmove(inputWindow, 1, getcurx(inputWindow) - 1); // Move back a space
             wrefresh(inputWindow);
         }
         else if(isprint(res)) // Any letter/num/symbol
@@ -135,12 +127,14 @@ void RemoveLastCharacter(stringstream& stream)
 //--
 /*
     Will update the convo window with a new message at the bottom
+    REFRESHES CONVO WINDOW
 */
 void UpdateConvoWindowWithNewMessage(const string message)
 {
     scroll(convoWindow);
     DrawConvoWindowBox();
     mvwaddstr(convoWindow, CONVO_WIN_BOTY, 1, message.c_str());
+    wrefresh(convoWindow);
 }
 //--
 /*
@@ -153,8 +147,9 @@ void InitializeScreen()
     cbreak(); // We want character at a time input
     curs_set(1); // Disable cursor
 
-
     DrawConvoWindowBox();
+    scrollok(convoWindow, true);
+    wsetscrreg(convoWindow, 1, CONVO_WIN_BOTY); // Sets the scroll regions of the convo window
 
     DrawInputWindowBox();
 
@@ -169,6 +164,21 @@ inline void ResetInputCursor()
     wmove(inputWindow, 1, 1);
 }
 //--
+/*
+    Completely erases and redraws the input window
+    REFRESHES the Input Window as well
+*/
+void ResetInputWindow()
+{
+    werase(inputWindow);
+    DrawInputWindowBox();
+    ResetInputCursor();
+    wrefresh(inputWindow);
+}
+//--
+/*
+    Draws the outline border of the input window
+*/
 inline void DrawInputWindowBox()
 {
     // Set up the Input Window
