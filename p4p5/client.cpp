@@ -25,10 +25,9 @@ using namespace std;
 #define CONVOWIN_Y 0
 #define CONVO_WIN_BOTY INPUTWIN_Y - 2
 
-// Functionality Prototypes
+// Function Prototypes
 void SIGINTHandler(int signum);
 void RemoveLastCharacter(stringstream& stream);
-// GUI Function Prototypes
 void InitializeScreen();
 void UpdateConvoWindowWithNewMessage(string message);
 inline void ResetInputCursor();
@@ -39,10 +38,10 @@ void ResetInputWindow();
 bool continueFlag;
 
 WINDOW* fullScr;
-WINDOW* inputWindow;
-WINDOW* convoWindow;
+WINDOW* inputWindow; // The window the user will use to input messages
+WINDOW* convoWindow; // The window containing any recv'd messages and the message history
 
-stringstream inputBuffer;
+stringstream inputBuffer; // Stores the user input, eventually used to send
 
 int main(int argc, char* argv[])
 {
@@ -57,38 +56,38 @@ int main(int argc, char* argv[])
     inputWindow = subwin(fullScr, 3, COLS, INPUTWIN_Y, INPUTWIN_X);
 
     InitializeScreen(); // Sets up the window in the buffer, needs to be refreshed
-    refresh();
 
-    int res;
-    ResetInputCursor();
+    int inputResult;
 
     while(continueFlag)
     {
-        res = wgetch(inputWindow);
-        if(res == ERR) continue;
-        if(!continueFlag) break;
+        // HANDLE USER INPUT
+        inputResult = wgetch(inputWindow);
+        if(inputResult == ERR) continue; // NonBlocking will have wgetch return ERR
+        if(!continueFlag) break; // If sigint was indicated, we wanna exit
 
-        if(res == '\n') // Enter
+        if(inputResult == '\n') // Enter
         {
-            UpdateConvoWindowWithNewMessage(inputBuffer.str());
-            wrefresh(convoWindow);
             ResetInputWindow();
-            inputBuffer.str("");
+            string word;
+            inputBuffer >> word;
+            UpdateConvoWindowWithNewMessage(word);
         }
-        else if(res == 127) // Backspace
+        else if(inputResult == 127) // Backspace
         {
             if(getcurx(inputWindow) <= 1) continue; // We don't want to go off the window or onto the border
-            RemoveLastCharacter(inputBuffer);
+            RemoveLastCharacter(inputBuffer); // Removes the last character from the stream
+            
             // Remove the character on the screen we are deleting
-            mvwaddch(inputWindow, 1, getcurx(inputWindow) - 1, ' ');
-            wmove(inputWindow, 1, getcurx(inputWindow) - 1); // Move back a space
-            wrefresh(inputWindow);
+            mvwaddch(inputWindow, 1, getcurx(inputWindow) - 1, ' '); // Remove the character from the screen
+            wmove(inputWindow, 1, getcurx(inputWindow) - 1); // Move the cursor back a space
+            wrefresh(inputWindow); // Refresh the input window without the deleted character
         }
-        else if(isprint(res)) // Any letter/num/symbol
+        else if(isprint(inputResult)) // Any letter/num/symbol
         {
-            inputBuffer << char(res);
-            mvwaddch(inputWindow, 1, getcurx(inputWindow), res);
-            wrefresh(inputWindow);
+            inputBuffer << char(inputResult); // Add our input to the buffer stream
+            mvwaddch(inputWindow, 1, getcurx(inputWindow), inputResult); // add the inputted character to the screen
+            wrefresh(inputWindow); // Refresh the window with the newly inputted character
         }
     }
 
@@ -96,7 +95,12 @@ int main(int argc, char* argv[])
     return 0;
 }
 //--
-#pragma region Functionality_Functions
+#pragma region NetworkFunctions
+
+#pragma endregion
+//--
+#pragma region GUI_BACKEND
+//--
 /*
     This function will be called anytime SIGINT (^c) is pressed
 */
@@ -106,6 +110,7 @@ void SIGINTHandler(int signum)
     nodelay(inputWindow, false);
     cbreak();
     curs_set(1);
+    system("stty sane");
     continueFlag = false;
 }
 //--
@@ -123,7 +128,7 @@ void RemoveLastCharacter(stringstream& stream)
 //--
 #pragma endregion
 //--
-#pragma region GUI_Functions
+#pragma region GUI_FRONTEND
 //--
 /*
     Will update the convo window with a new message at the bottom
@@ -139,6 +144,8 @@ void UpdateConvoWindowWithNewMessage(const string message)
 //--
 /*
     Draw the basic framework of the Convo and Input windows
+    Enables/Disables specific settings for the screen's behavior
+    REFRESHES the screen
 */
 void InitializeScreen()
 {   
@@ -147,16 +154,18 @@ void InitializeScreen()
     cbreak(); // We want character at a time input
     curs_set(1); // Disable cursor
 
-    DrawConvoWindowBox();
+    DrawConvoWindowBox(); // Draw the outline of the convo window
     scrollok(convoWindow, true);
     wsetscrreg(convoWindow, 1, CONVO_WIN_BOTY); // Sets the scroll regions of the convo window
 
-    DrawInputWindowBox();
-
+    DrawInputWindowBox(); // Draw the outline of the input window
+    ResetInputCursor();
+    refresh();
 }
 //--
 /*
     Will reset the cursor of the inputWindow to the starting position (1,1)
+    DOES NOT REFRESH
 */
 inline void ResetInputCursor()
 {
@@ -177,7 +186,8 @@ void ResetInputWindow()
 }
 //--
 /*
-    Draws the outline border of the input window
+    Draws the outer box and label of the input window
+    DOES NOT REFRESH
 */
 inline void DrawInputWindowBox()
 {
@@ -186,6 +196,10 @@ inline void DrawInputWindowBox()
     mvwaddstr(inputWindow, CONVOWIN_Y, CONVOWIN_X + 2, "Text Entry"); // Add descriptive heading
 }
 //--
+/*
+    Draws the outer box and label of the Conversation Window
+    DOES NOT REFRESH
+*/
 inline void DrawConvoWindowBox()
 {
     box(convoWindow, 0,0); // Draw box outline
